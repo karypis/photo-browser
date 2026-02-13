@@ -34,6 +34,18 @@ swift build -c release   # optimized build
 swift run                # build and launch
 ```
 
+## Install
+
+Build a `.dmg` installer with the included script:
+
+```bash
+./build-dmg.sh
+```
+
+This creates `GKPhotoViewer.dmg` — open it and drag **GK Photo Viewer** to **Applications**.
+
+> **Note:** The app is unsigned. On first launch, right-click the app and select **Open** to bypass Gatekeeper.
+
 ## Tech Stack
 
 - **SwiftUI** with `@Observable` macro
