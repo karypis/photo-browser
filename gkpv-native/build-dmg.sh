@@ -14,6 +14,12 @@ echo "==> Building release..."
 cd "$SCRIPT_DIR"
 swift build -c release
 
+echo "==> Generating app icon..."
+ICON_DIR=$(mktemp -d)
+swift "${SCRIPT_DIR}/generate-icon.swift" "$ICON_DIR"
+iconutil -c icns "${ICON_DIR}/AppIcon.iconset" -o "${ICON_DIR}/AppIcon.icns"
+rm -rf "${ICON_DIR}/AppIcon.iconset" "${ICON_DIR}/AppIcon_1024.png"
+
 echo "==> Creating app bundle..."
 mkdir -p "${STAGING_DIR}/${BUNDLE_NAME}/Contents/"{MacOS,Resources}
 
@@ -44,12 +50,17 @@ cat > "${STAGING_DIR}/${BUNDLE_NAME}/Contents/Info.plist" <<'PLIST'
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright 2026 karypis. MIT License.</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 PLIST
 
 cp "${BUILD_DIR}/GKPhotoViewer" "${STAGING_DIR}/${BUNDLE_NAME}/Contents/MacOS/GKPhotoViewer"
 chmod +x "${STAGING_DIR}/${BUNDLE_NAME}/Contents/MacOS/GKPhotoViewer"
+
+cp "${ICON_DIR}/AppIcon.icns" "${STAGING_DIR}/${BUNDLE_NAME}/Contents/Resources/AppIcon.icns"
+rm -rf "$ICON_DIR"
 
 ln -s /Applications "${STAGING_DIR}/Applications"
 

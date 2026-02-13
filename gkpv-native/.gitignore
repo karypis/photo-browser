@@ -2,3 +2,6 @@
 .DS_Store
 GKPhotoViewer
 *.dmg
+*.icns
+*.iconset/
+AppIcon_*.png
