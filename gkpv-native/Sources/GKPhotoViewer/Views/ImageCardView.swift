@@ -4,6 +4,7 @@ struct ImageCardView: View {
     let entry: ImageEntry
     let mode: LayoutMode
     let size: ThumbnailSize
+    @Environment(BrowserViewModel.self) private var browser
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -20,6 +21,21 @@ struct ImageCardView: View {
                     .transition(.opacity.animation(.easeIn(duration: 0.3)))
             } else {
                 shimmerPlaceholder
+            }
+
+            // Favorite star overlay (top-right)
+            if browser.isFavorite(entry) {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.yellow)
+                            .shadow(color: .black.opacity(0.5), radius: 2)
+                            .padding(6)
+                    }
+                    Spacer()
+                }
             }
 
             // Filename label
@@ -45,6 +61,17 @@ struct ImageCardView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .help(tooltipText)
+        .contextMenu {
+            if browser.isFavorite(entry) {
+                Button("Remove from Favorites") {
+                    browser.toggleFavorite(for: entry)
+                }
+            } else {
+                Button("Add to Favorites") {
+                    browser.toggleFavorite(for: entry)
+                }
+            }
+        }
     }
 
     private var tooltipText: String {

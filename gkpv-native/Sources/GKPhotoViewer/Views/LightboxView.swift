@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LightboxView: View {
     @Bindable var lightbox: LightboxViewModel
+    @Environment(BrowserViewModel.self) private var browser
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -52,6 +53,20 @@ struct LightboxView: View {
             // Top-right controls
             HStack(spacing: 8) {
                 Spacer()
+
+                // Favorite button
+                if let entry = lightbox.currentEntry {
+                    Button(action: { browser.toggleFavorite(for: entry) }) {
+                        Image(systemName: browser.isFavorite(entry) ? "star.fill" : "star")
+                            .font(.system(size: 18))
+                            .foregroundStyle(browser.isFavorite(entry) ? .yellow : .white)
+                            .frame(width: 40, height: 40)
+                            .background(.white.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Toggle favorite (F)")
+                }
 
                 // Info button
                 Button(action: { lightbox.toggleEXIF() }) {
@@ -190,6 +205,12 @@ struct LightboxView: View {
         }
         .onKeyPress(characters: CharacterSet(charactersIn: "lL")) { _ in
             lightbox.rotateCCW()
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "fF")) { _ in
+            if let entry = lightbox.currentEntry {
+                browser.toggleFavorite(for: entry)
+            }
             return .handled
         }
     }

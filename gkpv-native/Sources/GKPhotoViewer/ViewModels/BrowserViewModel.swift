@@ -14,6 +14,68 @@ final class BrowserViewModel {
     var statusText = ""
     private(set) var generation = 0
 
+    // MARK: - History
+
+    private struct HistoryEntry {
+        let rootURL: URL
+        let path: [String]
+    }
+
+    private var history: [HistoryEntry] = []
+    private var historyIndex = -1
+    private var isHistoryNavigation = false
+
+    var canGoBack: Bool { historyIndex > 0 }
+    var canGoForward: Bool { historyIndex < history.count - 1 }
+
+    // MARK: - Search
+
+    var searchText: String = "" {
+        didSet { updateStatusText() }
+    }
+    var focusSearchRequested = false
+
+    func requestSearchFocus() {
+        focusSearchRequested = true
+    }
+
+    func clearSearch() {
+        searchText = ""
+    }
+
+    // MARK: - Favorites
+
+    var showFavoritesOnly: Bool = false {
+        didSet { updateStatusText() }
+    }
+
+    func toggleFavorite(for entry: ImageEntry) {
+        FavoritesManager.shared.toggle(entry.url.path)
+    }
+
+    func isFavorite(_ entry: ImageEntry) -> Bool {
+        FavoritesManager.shared.isFavorite(entry.url.path)
+    }
+
+    // MARK: - Filtered Images
+
+    var filteredImages: [ImageEntry] {
+        var result = images
+
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter { $0.name.lowercased().contains(query) }
+        }
+
+        if showFavoritesOnly {
+            result = result.filter { FavoritesManager.shared.isFavorite($0.url.path) }
+        }
+
+        return result
+    }
+
+    // MARK: - Computed
+
     var isOpen: Bool { rootURL != nil }
 
     var rootName: String { rootURL?.lastPathComponent ?? "" }
@@ -36,15 +98,64 @@ final class BrowserViewModel {
         panel.allowsMultipleSelection = false
         panel.message = "Choose a photo folder"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        openFolder(url: url)
+    }
+
+    func openFolder(url: URL) {
         rootURL = url
         currentPath = []
+        searchText = ""
+        showFavoritesOnly = false
+
+        // Reset history for new root
+        history = [HistoryEntry(rootURL: url, path: [])]
+        historyIndex = 0
+
+        RecentFoldersManager.shared.addRecent(url: url)
         scanDirectory()
+    }
+
+    // MARK: - History Navigation
+
+    func goBack() {
+        guard canGoBack else { return }
+        historyIndex -= 1
+        let entry = history[historyIndex]
+        isHistoryNavigation = true
+        rootURL = entry.rootURL
+        currentPath = entry.path
+        searchText = ""
+        scanDirectory()
+        isHistoryNavigation = false
+    }
+
+    func goForward() {
+        guard canGoForward else { return }
+        historyIndex += 1
+        let entry = history[historyIndex]
+        isHistoryNavigation = true
+        rootURL = entry.rootURL
+        currentPath = entry.path
+        searchText = ""
+        scanDirectory()
+        isHistoryNavigation = false
     }
 
     // MARK: - Navigation
 
     func navigateTo(path: [String]) {
         currentPath = path
+        searchText = ""
+
+        if !isHistoryNavigation, let root = rootURL {
+            // Trim forward history
+            if historyIndex < history.count - 1 {
+                history = Array(history.prefix(historyIndex + 1))
+            }
+            history.append(HistoryEntry(rootURL: root, path: path))
+            historyIndex = history.count - 1
+        }
+
         scanDirectory()
     }
 
@@ -184,7 +295,13 @@ final class BrowserViewModel {
         if thumbsDone < total {
             statusText = "Generating thumbnails (\(thumbsDone)/\(total))..."
         } else {
-            statusText = "\(total) image\(total != 1 ? "s" : ""), \(folderCount) folder\(folderCount != 1 ? "s" : "")"
+            let filtered = filteredImages.count
+            let isFiltering = !searchText.isEmpty || showFavoritesOnly
+            if isFiltering {
+                statusText = "\(filtered) of \(total) image\(total != 1 ? "s" : ""), \(folderCount) folder\(folderCount != 1 ? "s" : "")"
+            } else {
+                statusText = "\(total) image\(total != 1 ? "s" : ""), \(folderCount) folder\(folderCount != 1 ? "s" : "")"
+            }
         }
     }
 

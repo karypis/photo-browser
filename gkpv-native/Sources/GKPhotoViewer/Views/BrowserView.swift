@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct BrowserView: View {
     @Environment(BrowserViewModel.self) private var browser
@@ -7,6 +8,7 @@ struct BrowserView: View {
     @State private var rootNode: DirectoryNode?
     @State private var sidebarWidth: CGFloat = 220
     @State private var showSidebar = true
+    @State private var isDropTargeted = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -33,6 +35,21 @@ struct BrowserView: View {
             if lightbox.isOpen {
                 LightboxView(lightbox: lightbox)
             }
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [8, 4]))
+                    .foregroundStyle(.blue)
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
+            DropHelper.extractFolderURL(from: providers) { url in
+                if let url { browser.openFolder(url: url) }
+            }
+            return true
         }
     }
 }

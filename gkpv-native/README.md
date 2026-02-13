@@ -17,9 +17,14 @@ A native macOS photo browser built with SwiftUI. Zero dependencies, no Xcode pro
 - **EXIF info panel** — press I to see file details and camera metadata (works for JPEG, HEIC, and all ImageIO-supported formats)
 - **Image info tooltips** — hover thumbnails to see filename, dimensions, file size, and date
 - **Image preloading** — previous and next images are preloaded in the background for instant navigation
+- **Back/forward history** — navigate back and forward through browsed directories with Cmd+[ / Cmd+] or toolbar buttons; history resets when opening a new root folder
+- **Search/filter** — real-time filename search in the toolbar; filters the gallery as you type, status bar shows "X of Y images"
+- **Favorites** — right-click any thumbnail to add/remove favorites, or press F in the lightbox; favorited images show a yellow star overlay; toggle the toolbar star to show only favorites; persisted to `~/Library/Application Support/GKPhotoViewer/favorites.json`
+- **Recent folders** — the last 10 opened folders appear on the landing page and in File → Recent Folders; stored as security-scoped bookmarks in UserDefaults
+- **Drag and drop** — drag a folder from Finder onto the landing page or browser view to open it directly
 - **Sorting** — sort by name or date (ascending/descending)
 - **Cache management** — Clear Cache button to force thumbnail regeneration
-- **Keyboard shortcuts** — arrow keys, Esc, +/-/0, I (EXIF), R/L (rotate), Cmd+O (open), Cmd+1/2 (layout)
+- **Keyboard shortcuts** — arrow keys, Esc, +/-/0, I (EXIF), R/L (rotate), F (favorite), Cmd+O (open), Cmd+F (search), Cmd+[ / ] (back/forward), Cmd+1/2 (layout)
 
 ## Requirements
 
@@ -65,7 +70,7 @@ Sources/GKPhotoViewer/
   ViewModels/    — BrowserViewModel, LightboxViewModel, ThumbnailManager, EXIFParser
   Views/         — all SwiftUI views (landing, browser, gallery, lightbox, sidebar, etc.)
   Layout/        — JustifiedLayout (custom SwiftUI Layout protocol)
-  Utilities/     — FormatHelpers, Constants
+  Utilities/     — FormatHelpers, Constants, FavoritesManager, RecentFoldersManager
 ```
 
 ## License
