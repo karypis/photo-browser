@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gkpv – gk photo viewer</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --bg-secondary: #252525;
+    --bg-hover: #333;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #4a9eff;
+    --accent-hover: #6bb3ff;
+    --border: #333;
+    --thumb-sm: 120px;
+    --thumb-md: 200px;
+    --thumb-lg: 320px;
+    --thumb-size: var(--thumb-md);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ---------- toolbar ---------- */
+  #toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  #toolbar .brand {
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--accent);
+    margin-right: 8px;
+    user-select: none;
+  }
+
+  #toolbar button, #toolbar select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  #toolbar button:hover, #toolbar select:hover {
+    background: var(--bg-hover);
+  }
+
+  #breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  #breadcrumbs span {
+    color: var(--text-muted);
+    user-select: none;
+  }
+  #breadcrumbs button {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  #breadcrumbs button:hover { text-decoration: underline; }
+
+  .size-group {
+    display: flex;
+    gap: 0;
+  }
+  .size-group button {
+    border-radius: 0;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .size-group button:first-child { border-radius: 6px 0 0 6px; }
+  .size-group button:last-child { border-radius: 0 6px 6px 0; }
+  .size-group button.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* ---------- landing ---------- */
+  #landing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 80vh;
+    gap: 20px;
+    text-align: center;
+  }
+  #landing h1 { font-size: 48px; color: var(--accent); }
+  #landing p { color: var(--text-muted); font-size: 15px; max-width: 420px; }
+  #landing button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 32px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  #landing button:hover { background: var(--accent-hover); }
+
+  /* ---------- grid ---------- */
+  #gallery {
+    display: none;
+    padding: 16px;
+  }
+
+  .dir-section {
+    margin-bottom: 24px;
+  }
+  .dir-section h3 {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--thumb-size), 1fr));
+    gap: 8px;
+  }
+
+  .card {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: transform .15s, box-shadow .15s;
+    aspect-ratio: 1;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+  .card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .card .label {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 6px 6px;
+    font-size: 11px;
+    color: #fff;
+    background: linear-gradient(transparent, rgba(0,0,0,.7));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .folder-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+  }
+  .folder-card:hover { background: var(--bg-hover); }
+  .folder-card .folder-icon { font-size: 48px; line-height: 1; }
+  .folder-card .label {
+    position: static;
+    background: none;
+    color: var(--text);
+    text-align: center;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+
+  /* ---------- lightbox ---------- */
+  #lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0,0,0,.92);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  #lightbox.open { display: flex; }
+
+  #lightbox img {
+    max-width: 95vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 4px;
+    user-select: none;
+  }
+
+  #lightbox .info {
+    margin-top: 10px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #lightbox .nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,.1);
+    border: none;
+    color: #fff;
+    font-size: 28px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background .15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #lightbox .nav-btn:hover { background: rgba(255,255,255,.25); }
+  #lightbox .nav-prev { left: 16px; }
+  #lightbox .nav-next { right: 16px; }
+
+  #lightbox .close-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: rgba(255,255,255,.1);
+    border: none;
+    color: #fff;
+    font-size: 22px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  #lightbox .close-btn:hover { background: rgba(255,255,255,.25); }
+
+  /* ---------- counter ---------- */
+  #counter {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* ---------- loading ---------- */
+  #loading {
+    display: none;
+    text-align: center;
+    padding: 60px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  #loading.show { display: block; }
+
+  .spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- sort ---------- */
+  #sortSelect { min-width: 100px; }
+</style>
+</head>
+<body>
+
+<!-- Landing -->
+<div id="landing">
+  <h1>gkpv</h1>
+  <p>gk photo viewer — browse your local photo library entirely in the browser.</p>
+  <button id="openBtn">Open Folder</button>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar" style="display:none">
+  <span class="brand">gkpv</span>
+  <button id="openBtnToolbar" title="Open a different folder">Open</button>
+  <div id="breadcrumbs"></div>
+  <div class="size-group">
+    <button data-size="sm">S</button>
+    <button data-size="md" class="active">M</button>
+    <button data-size="lg">L</button>
+  </div>
+  <select id="sortSelect" title="Sort order">
+    <option value="name-asc">Name A–Z</option>
+    <option value="name-desc">Name Z–A</option>
+    <option value="date-new">Newest</option>
+    <option value="date-old">Oldest</option>
+  </select>
+  <span id="counter"></span>
+</div>
+
+<!-- Loading -->
+<div id="loading"><div class="spinner"></div>Scanning directory…</div>
+
+<!-- Gallery -->
+<div id="gallery"></div>
+
+<!-- Lightbox -->
+<div id="lightbox">
+  <button class="close-btn" title="Close (Esc)">&times;</button>
+  <button class="nav-btn nav-prev" title="Previous (←)">&#8249;</button>
+  <button class="nav-btn nav-next" title="Next (→)">&#8250;</button>
+  <img id="lbImg" src="" alt="">
+  <div class="info" id="lbInfo"></div>
+</div>
+
+<script>
+const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','bmp','webp','avif','svg','ico','tiff','tif','heic']);
+
+let rootHandle = null;   // FileSystemDirectoryHandle for the root
+let currentPath = [];     // path segments from root
+let currentImages = [];   // images in the current view (for lightbox navigation)
+let lbIndex = 0;
+
+// DOM refs
+const $landing   = document.getElementById('landing');
+const $toolbar   = document.getElementById('toolbar');
+const $gallery   = document.getElementById('gallery');
+const $loading   = document.getElementById('loading');
+const $lightbox  = document.getElementById('lightbox');
+const $lbImg     = document.getElementById('lbImg');
+const $lbInfo    = document.getElementById('lbInfo');
+const $crumbs    = document.getElementById('breadcrumbs');
+const $counter   = document.getElementById('counter');
+const $sort      = document.getElementById('sortSelect');
+
+// ---- Open folder ----
+document.getElementById('openBtn').addEventListener('click', pickFolder);
+document.getElementById('openBtnToolbar').addEventListener('click', pickFolder);
+
+async function pickFolder() {
+  try {
+    rootHandle = await window.showDirectoryPicker({ mode: 'read' });
+    currentPath = [];
+    $landing.style.display = 'none';
+    $toolbar.style.display = 'flex';
+    $gallery.style.display = 'block';
+    await renderDirectory();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+// ---- Navigate into a subdirectory ----
+async function navigateTo(pathSegments) {
+  currentPath = pathSegments;
+  await renderDirectory();
+}
+
+// ---- Get directory handle for currentPath ----
+async function getDirHandle(path) {
+  let h = rootHandle;
+  for (const seg of path) {
+    h = await h.getDirectoryHandle(seg);
+  }
+  return h;
+}
+
+// ---- Scan a single directory level ----
+async function scanDir(dirHandle) {
+  const folders = [];
+  const images = [];
+  for await (const [name, handle] of dirHandle) {
+    if (name.startsWith('.')) continue;
+    if (handle.kind === 'directory') {
+      folders.push({ name, handle });
+    } else {
+      const ext = name.split('.').pop().toLowerCase();
+      if (IMAGE_EXTS.has(ext)) {
+        const file = await handle.getFile();
+        images.push({ name, file, handle });
+      }
+    }
+  }
+  return { folders, images };
+}
+
+// ---- Sort helper ----
+function sortItems(items) {
+  const order = $sort.value;
+  const copy = [...items];
+  switch (order) {
+    case 'name-asc':
+      copy.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      break;
+    case 'name-desc':
+      copy.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
+      break;
+    case 'date-new':
+      copy.sort((a, b) => (b.file?.lastModified || 0) - (a.file?.lastModified || 0));
+      break;
+    case 'date-old':
+      copy.sort((a, b) => (a.file?.lastModified || 0) - (b.file?.lastModified || 0));
+      break;
+  }
+  return copy;
+}
+
+$sort.addEventListener('change', renderDirectory);
+
+// ---- Render current directory ----
+async function renderDirectory() {
+  $gallery.innerHTML = '';
+  $loading.classList.add('show');
+  $gallery.style.display = 'none';
+
+  try {
+    const dirHandle = await getDirHandle(currentPath);
+    const { folders, images } = await scanDir(dirHandle);
+
+    const sortedFolders = sortItems(folders);
+    const sortedImages = sortItems(images);
+
+    // build URL cache for images (object URLs)
+    const imgEntries = sortedImages.map(img => ({
+      name: img.name,
+      url: URL.createObjectURL(img.file),
+      file: img.file,
+    }));
+
+    currentImages = imgEntries;
+
+    $gallery.innerHTML = '';
+
+    // Folders
+    if (sortedFolders.length) {
+      const sec = document.createElement('div');
+      sec.className = 'dir-section';
+      const h = document.createElement('h3');
+      h.textContent = `Folders (${sortedFolders.length})`;
+      sec.appendChild(h);
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      for (const f of sortedFolders) {
+        const card = document.createElement('div');
+        card.className = 'card folder-card';
+        card.innerHTML = `<span class="folder-icon">&#128193;</span><span class="label">${esc(f.name)}</span>`;
+        card.addEventListener('click', () => navigateTo([...currentPath, f.name]));
+        grid.appendChild(card);
+      }
+      sec.appendChild(grid);
+      $gallery.appendChild(sec);
+    }
+
+    // Images
+    if (imgEntries.length) {
+      const sec = document.createElement('div');
+      sec.className = 'dir-section';
+      const h = document.createElement('h3');
+      h.textContent = `Images (${imgEntries.length})`;
+      sec.appendChild(h);
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      for (let i = 0; i < imgEntries.length; i++) {
+        const entry = imgEntries[i];
+        const card = document.createElement('div');
+        card.className = 'card';
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.src = entry.url;
+        img.alt = entry.name;
+        card.appendChild(img);
+        const lbl = document.createElement('span');
+        lbl.className = 'label';
+        lbl.textContent = entry.name;
+        card.appendChild(lbl);
+        const idx = i;
+        card.addEventListener('click', () => openLightbox(idx));
+        grid.appendChild(card);
+      }
+      sec.appendChild(grid);
+      $gallery.appendChild(sec);
+    }
+
+    if (!sortedFolders.length && !imgEntries.length) {
+      $gallery.innerHTML = '<p style="text-align:center;padding:60px;color:var(--text-muted)">No images or subfolders found in this directory.</p>';
+    }
+
+    // Counter
+    $counter.textContent = `${imgEntries.length} image${imgEntries.length !== 1 ? 's' : ''}, ${sortedFolders.length} folder${sortedFolders.length !== 1 ? 's' : ''}`;
+
+    // Breadcrumbs
+    renderBreadcrumbs();
+  } catch (e) {
+    $gallery.innerHTML = `<p style="text-align:center;padding:60px;color:#f66">Error reading directory: ${esc(e.message)}</p>`;
+  }
+
+  $loading.classList.remove('show');
+  $gallery.style.display = 'block';
+}
+
+// ---- Breadcrumbs ----
+function renderBreadcrumbs() {
+  $crumbs.innerHTML = '';
+  const btn0 = document.createElement('button');
+  btn0.textContent = rootHandle.name;
+  btn0.addEventListener('click', () => navigateTo([]));
+  $crumbs.appendChild(btn0);
+
+  for (let i = 0; i < currentPath.length; i++) {
+    const sep = document.createElement('span');
+    sep.textContent = ' / ';
+    $crumbs.appendChild(sep);
+    const btn = document.createElement('button');
+    btn.textContent = currentPath[i];
+    const target = currentPath.slice(0, i + 1);
+    btn.addEventListener('click', () => navigateTo(target));
+    $crumbs.appendChild(btn);
+  }
+}
+
+// ---- Thumbnail size ----
+document.querySelectorAll('.size-group button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.size-group button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const s = btn.dataset.size;
+    document.documentElement.style.setProperty('--thumb-size',
+      s === 'sm' ? 'var(--thumb-sm)' : s === 'lg' ? 'var(--thumb-lg)' : 'var(--thumb-md)');
+  });
+});
+
+// ---- Lightbox ----
+function openLightbox(index) {
+  lbIndex = index;
+  showLightboxImage();
+  $lightbox.classList.add('open');
+}
+
+function showLightboxImage() {
+  const entry = currentImages[lbIndex];
+  if (!entry) return;
+  $lbImg.src = entry.url;
+  $lbInfo.textContent = `${entry.name}  (${lbIndex + 1} / ${currentImages.length})`;
+}
+
+function closeLightbox() {
+  $lightbox.classList.remove('open');
+}
+
+function lbPrev() {
+  if (currentImages.length === 0) return;
+  lbIndex = (lbIndex - 1 + currentImages.length) % currentImages.length;
+  showLightboxImage();
+}
+
+function lbNext() {
+  if (currentImages.length === 0) return;
+  lbIndex = (lbIndex + 1) % currentImages.length;
+  showLightboxImage();
+}
+
+$lightbox.querySelector('.close-btn').addEventListener('click', closeLightbox);
+$lightbox.querySelector('.nav-prev').addEventListener('click', lbPrev);
+$lightbox.querySelector('.nav-next').addEventListener('click', lbNext);
+$lightbox.addEventListener('click', e => { if (e.target === $lightbox) closeLightbox(); });
+
+document.addEventListener('keydown', e => {
+  if (!$lightbox.classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  else if (e.key === 'ArrowLeft') lbPrev();
+  else if (e.key === 'ArrowRight') lbNext();
+});
+
+// ---- Utility ----
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
