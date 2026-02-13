@@ -306,6 +306,32 @@
 
   /* ---------- sort ---------- */
   #sortSelect { min-width: 100px; }
+
+  /* ---------- shimmer placeholder ---------- */
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-hover) 50%, var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    z-index: 1;
+  }
+  .card.thumb-ready::before { display: none; }
+  .card.folder-card::before { display: none; }
+
+  /* ---------- thumbnail fade-in ---------- */
+  .card img {
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .card img.loaded {
+    opacity: 1;
+  }
 </style>
 </head>
 <body>
@@ -333,6 +359,7 @@
     <option value="date-new">Newest</option>
     <option value="date-old">Oldest</option>
   </select>
+  <button id="clearCacheBtn" title="Clear thumbnail cache">Clear Cache</button>
   <span id="counter"></span>
 </div>
 
@@ -354,10 +381,22 @@
 <script>
 const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','bmp','webp','avif','svg','ico','tiff','tif','heic']);
 
+// Thumbnail constants
+const THUMB_MAX = 640;
+const THUMB_QUALITY = 0.8;
+const THUMB_CONCURRENCY = 4;
+
 let rootHandle = null;   // FileSystemDirectoryHandle for the root
 let currentPath = [];     // path segments from root
-let currentImages = [];   // images in the current view (for lightbox navigation)
+let currentImages = [];   // { name, file, thumbUrl } for lightbox navigation
 let lbIndex = 0;
+let lbCurrentUrl = null;  // full-size blob URL currently shown in lightbox
+let thumbGeneration = 0;  // generation counter to abort stale work
+let currentThumbUrls = []; // blob URLs for current thumbnails (for revocation)
+
+// OPFS cache state
+let cacheDir = null;      // FileSystemDirectoryHandle for gkpv-thumbs in OPFS
+const memCache = new Map(); // in-memory fallback if OPFS unavailable
 
 // DOM refs
 const $landing   = document.getElementById('landing');
@@ -371,6 +410,101 @@ const $crumbs    = document.getElementById('breadcrumbs');
 const $counter   = document.getElementById('counter');
 const $sort      = document.getElementById('sortSelect');
 
+// ---- OPFS Cache System ----
+async function initCache() {
+  try {
+    const opfsRoot = await navigator.storage.getDirectory();
+    cacheDir = await opfsRoot.getDirectoryHandle('gkpv-thumbs', { create: true });
+  } catch (e) {
+    console.warn('OPFS unavailable, using in-memory cache:', e);
+    cacheDir = null;
+  }
+}
+
+function cacheKey(dirPath, file) {
+  const raw = `${dirPath}/${file.name}_${file.size}_${file.lastModified}`;
+  return raw.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200);
+}
+
+async function getCachedThumb(key) {
+  if (cacheDir) {
+    try {
+      const fileHandle = await cacheDir.getFileHandle(key);
+      const file = await fileHandle.getFile();
+      return file;
+    } catch (e) {
+      return null;
+    }
+  }
+  return memCache.get(key) || null;
+}
+
+async function setCachedThumb(key, blob) {
+  if (cacheDir) {
+    try {
+      const fileHandle = await cacheDir.getFileHandle(key, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch (e) {
+      console.warn('Cache write failed:', e);
+    }
+  } else {
+    memCache.set(key, blob);
+  }
+}
+
+async function clearCache() {
+  if (cacheDir) {
+    try {
+      const opfsRoot = await navigator.storage.getDirectory();
+      await opfsRoot.removeEntry('gkpv-thumbs', { recursive: true });
+      cacheDir = await opfsRoot.getDirectoryHandle('gkpv-thumbs', { create: true });
+    } catch (e) {
+      console.warn('Cache clear failed:', e);
+    }
+  }
+  memCache.clear();
+}
+
+// ---- Thumbnail Generation ----
+async function generateThumb(file) {
+  const bitmap = await createImageBitmap(file);
+  let w = bitmap.width;
+  let h = bitmap.height;
+  if (w > THUMB_MAX || h > THUMB_MAX) {
+    const scale = Math.min(THUMB_MAX / w, THUMB_MAX / h);
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+  }
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return await canvas.convertToBlob({ type: 'image/jpeg', quality: THUMB_QUALITY });
+}
+
+async function getOrCreateThumb(dirPath, file) {
+  const key = cacheKey(dirPath, file);
+  const cached = await getCachedThumb(key);
+  if (cached) {
+    const url = URL.createObjectURL(cached);
+    return url;
+  }
+  const blob = await generateThumb(file);
+  await setCachedThumb(key, blob);
+  const url = URL.createObjectURL(blob);
+  return url;
+}
+
+// ---- Memory cleanup ----
+function revokeCurrentUrls() {
+  for (const url of currentThumbUrls) {
+    URL.revokeObjectURL(url);
+  }
+  currentThumbUrls = [];
+}
+
 // ---- Open folder ----
 document.getElementById('openBtn').addEventListener('click', pickFolder);
 document.getElementById('openBtnToolbar').addEventListener('click', pickFolder);
@@ -382,11 +516,18 @@ async function pickFolder() {
     $landing.style.display = 'none';
     $toolbar.style.display = 'flex';
     $gallery.style.display = 'block';
+    await initCache();
     await renderDirectory();
   } catch (e) {
     if (e.name !== 'AbortError') console.error(e);
   }
 }
+
+// ---- Clear Cache button ----
+document.getElementById('clearCacheBtn').addEventListener('click', async () => {
+  await clearCache();
+  if (rootHandle) await renderDirectory();
+});
 
 // ---- Navigate into a subdirectory ----
 async function navigateTo(pathSegments) {
@@ -447,6 +588,11 @@ $sort.addEventListener('change', renderDirectory);
 
 // ---- Render current directory ----
 async function renderDirectory() {
+  const gen = ++thumbGeneration;
+
+  // Revoke previous thumbnail URLs
+  revokeCurrentUrls();
+
   $gallery.innerHTML = '';
   $loading.classList.add('show');
   $gallery.style.display = 'none';
@@ -455,14 +601,18 @@ async function renderDirectory() {
     const dirHandle = await getDirHandle(currentPath);
     const { folders, images } = await scanDir(dirHandle);
 
+    if (gen !== thumbGeneration) return;
+
     const sortedFolders = sortItems(folders);
     const sortedImages = sortItems(images);
 
-    // build URL cache for images (object URLs)
+    const dirPath = currentPath.join('/');
+
+    // Build image entries (no URLs yet — thumbnails load async)
     const imgEntries = sortedImages.map(img => ({
       name: img.name,
-      url: URL.createObjectURL(img.file),
       file: img.file,
+      thumbUrl: null,
     }));
 
     currentImages = imgEntries;
@@ -489,7 +639,9 @@ async function renderDirectory() {
       $gallery.appendChild(sec);
     }
 
-    // Images
+    // Images — render grid with shimmer placeholders
+    const cardEls = [];
+    const imgEls = [];
     if (imgEntries.length) {
       const sec = document.createElement('div');
       sec.className = 'dir-section';
@@ -503,8 +655,6 @@ async function renderDirectory() {
         const card = document.createElement('div');
         card.className = 'card';
         const img = document.createElement('img');
-        img.loading = 'lazy';
-        img.src = entry.url;
         img.alt = entry.name;
         card.appendChild(img);
         const lbl = document.createElement('span');
@@ -514,6 +664,8 @@ async function renderDirectory() {
         const idx = i;
         card.addEventListener('click', () => openLightbox(idx));
         grid.appendChild(card);
+        cardEls.push(card);
+        imgEls.push(img);
       }
       sec.appendChild(grid);
       $gallery.appendChild(sec);
@@ -523,17 +675,66 @@ async function renderDirectory() {
       $gallery.innerHTML = '<p style="text-align:center;padding:60px;color:var(--text-muted)">No images or subfolders found in this directory.</p>';
     }
 
-    // Counter
+    // Counter & Breadcrumbs
     $counter.textContent = `${imgEntries.length} image${imgEntries.length !== 1 ? 's' : ''}, ${sortedFolders.length} folder${sortedFolders.length !== 1 ? 's' : ''}`;
-
-    // Breadcrumbs
     renderBreadcrumbs();
-  } catch (e) {
-    $gallery.innerHTML = `<p style="text-align:center;padding:60px;color:#f66">Error reading directory: ${esc(e.message)}</p>`;
-  }
 
-  $loading.classList.remove('show');
-  $gallery.style.display = 'block';
+    $loading.classList.remove('show');
+    $gallery.style.display = 'block';
+
+    // Process thumbnails with concurrency limit
+    if (imgEntries.length) {
+      let completed = 0;
+      const total = imgEntries.length;
+      $counter.textContent = `Generating thumbnails (0/${total})...`;
+
+      const queue = imgEntries.map((entry, i) => i);
+      let qi = 0;
+
+      async function worker() {
+        while (qi < queue.length) {
+          const idx = queue[qi++];
+          if (gen !== thumbGeneration) return;
+          const entry = imgEntries[idx];
+          try {
+            const thumbUrl = await getOrCreateThumb(dirPath, entry.file);
+            if (gen !== thumbGeneration) {
+              URL.revokeObjectURL(thumbUrl);
+              return;
+            }
+            entry.thumbUrl = thumbUrl;
+            currentThumbUrls.push(thumbUrl);
+            imgEls[idx].src = thumbUrl;
+            imgEls[idx].onload = () => imgEls[idx].classList.add('loaded');
+            cardEls[idx].classList.add('thumb-ready');
+          } catch (e) {
+            console.warn('Thumb failed for', entry.name, e);
+            cardEls[idx].classList.add('thumb-ready');
+          }
+          completed++;
+          if (gen === thumbGeneration) {
+            if (completed < total) {
+              $counter.textContent = `Generating thumbnails (${completed}/${total})...`;
+            } else {
+              $counter.textContent = `${total} image${total !== 1 ? 's' : ''}, ${sortedFolders.length} folder${sortedFolders.length !== 1 ? 's' : ''}`;
+            }
+          }
+        }
+      }
+
+      const workers = [];
+      for (let i = 0; i < Math.min(THUMB_CONCURRENCY, total); i++) {
+        workers.push(worker());
+      }
+      await Promise.all(workers);
+    }
+  } catch (e) {
+    if (gen === thumbGeneration) {
+      $gallery.innerHTML = `<p style="text-align:center;padding:60px;color:#f66">Error reading directory: ${esc(e.message)}</p>`;
+      $loading.classList.remove('show');
+      $gallery.style.display = 'block';
+    }
+  }
 }
 
 // ---- Breadcrumbs ----
@@ -577,12 +778,23 @@ function openLightbox(index) {
 function showLightboxImage() {
   const entry = currentImages[lbIndex];
   if (!entry) return;
-  $lbImg.src = entry.url;
+  // Revoke previous full-size URL
+  if (lbCurrentUrl) {
+    URL.revokeObjectURL(lbCurrentUrl);
+    lbCurrentUrl = null;
+  }
+  // Create full-size URL on demand from original file
+  lbCurrentUrl = URL.createObjectURL(entry.file);
+  $lbImg.src = lbCurrentUrl;
   $lbInfo.textContent = `${entry.name}  (${lbIndex + 1} / ${currentImages.length})`;
 }
 
 function closeLightbox() {
   $lightbox.classList.remove('open');
+  if (lbCurrentUrl) {
+    URL.revokeObjectURL(lbCurrentUrl);
+    lbCurrentUrl = null;
+  }
 }
 
 function lbPrev() {
