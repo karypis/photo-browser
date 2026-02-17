@@ -235,6 +235,16 @@
   #lightbox img.grab-cursor { cursor: grab; }
   #lightbox img.grabbing-cursor { cursor: grabbing; }
 
+  #lbImgPrev {
+    position: absolute;
+    pointer-events: none;
+    z-index: 205;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    will-change: opacity;
+    transform: none;
+  }
+
   #lbZoom {
     position: absolute;
     bottom: 60px;
@@ -552,6 +562,7 @@
   <div id="exifPanel" class="exif-panel"></div>
   <button class="nav-btn nav-prev" title="Previous (←)">&#8249;</button>
   <button class="nav-btn nav-next" title="Next (→)">&#8250;</button>
+  <img id="lbImgPrev" src="" alt="" draggable="false">
   <img id="lbImg" src="" alt="" draggable="false">
   <div id="lbZoom"></div>
   <div class="info" id="lbInfo"></div>
@@ -599,6 +610,7 @@ const $gallery   = document.getElementById('gallery');
 const $loading   = document.getElementById('loading');
 const $lightbox  = document.getElementById('lightbox');
 const $lbImg     = document.getElementById('lbImg');
+const $lbImgPrev = document.getElementById('lbImgPrev');
 const $lbInfo    = document.getElementById('lbInfo');
 const $crumbs    = document.getElementById('breadcrumbs');
 const $counter   = document.getElementById('counter');
@@ -611,7 +623,7 @@ function showTooltip(entry, x, y) {
   const dims = entry.width ? `${entry.width} × ${entry.height}` : '—';
   const size = formatSize(entry.file.size);
   const date = new Date(entry.file.lastModified).toLocaleDateString();
-  $tooltip.innerHTML = `<span class="tt-name">${esc(entry.name)}</span><span class="tt-detail">${dims} &middot; ${size} &middot; ${date}</span>`;
+  $tooltip.innerHTML = `<span class="tt-name">${esc(entry.name)}</span><span class="tt-detail">${esc(dims)} &middot; ${esc(size)} &middot; ${esc(date)}</span>`;
   positionTooltip(x, y);
   $tooltip.classList.add('visible');
 }
@@ -731,7 +743,9 @@ async function getOrCreateThumb(dirPath, file) {
         const mh = await cacheDir.getFileHandle(key + '_m');
         const mf = await mh.getFile();
         const meta = JSON.parse(await mf.text());
-        width = meta.w; height = meta.h;
+        if (typeof meta.w === 'number' && typeof meta.h === 'number') {
+          width = meta.w; height = meta.h;
+        }
       }
     } catch (e) { /* no metadata yet */ }
     return { url, width, height };
@@ -1323,7 +1337,7 @@ async function loadAspectRatios(dirPath, entries, gen) {
   let anyNew = false;
   for (const entry of entries) {
     const key = `${entry.name}_${entry.file.size}_${entry.file.lastModified}`;
-    if (ratios[key]) {
+    if (ratios[key] && typeof ratios[key].w === 'number' && typeof ratios[key].h === 'number' && ratios[key].h > 0) {
       entry.width = ratios[key].w;
       entry.height = ratios[key].h;
       entry.aspect = ratios[key].w / ratios[key].h;
@@ -1429,7 +1443,8 @@ async function _parseExif(file) {
         function readTagValue(type, count, valueOffset) {
           if (type === 2) { // ASCII
             let s = '';
-            for (let i = 0; i < count - 1; i++) s += String.fromCharCode(view.getUint8(tiffStart + valueOffset + i));
+            const maxLen = Math.min(count - 1, buf.byteLength - (tiffStart + valueOffset));
+            for (let i = 0; i < maxLen; i++) s += String.fromCharCode(view.getUint8(tiffStart + valueOffset + i));
             return s.trim();
           }
           if (type === 3) return g16(valueOffset); // SHORT
@@ -1506,10 +1521,10 @@ async function updateExifPanel() {
   if (!entry) return;
   let html = '<div class="exif-heading">File</div>';
   html += `<div class="exif-row"><span class="exif-label">Name</span><span class="exif-value">${esc(entry.name)}</span></div>`;
-  html += `<div class="exif-row"><span class="exif-label">Size</span><span class="exif-value">${formatSize(entry.file.size)}</span></div>`;
-  html += `<div class="exif-row"><span class="exif-label">Type</span><span class="exif-value">${entry.file.type || '—'}</span></div>`;
+  html += `<div class="exif-row"><span class="exif-label">Size</span><span class="exif-value">${esc(formatSize(entry.file.size))}</span></div>`;
+  html += `<div class="exif-row"><span class="exif-label">Type</span><span class="exif-value">${esc(entry.file.type || '—')}</span></div>`;
   if (entry.width) {
-    html += `<div class="exif-row"><span class="exif-label">Dimensions</span><span class="exif-value">${entry.width} × ${entry.height}</span></div>`;
+    html += `<div class="exif-row"><span class="exif-label">Dimensions</span><span class="exif-value">${esc(String(entry.width))} × ${esc(String(entry.height))}</span></div>`;
   }
   html += `<div class="exif-row"><span class="exif-label">Modified</span><span class="exif-value">${new Date(entry.file.lastModified).toLocaleDateString()}</span></div>`;
 
@@ -1522,7 +1537,7 @@ async function updateExifPanel() {
     const settings = [formatFocalLength(exif.FocalLength), formatAperture(exif.FNumber), formatShutter(exif.ExposureTime), exif.ISO ? 'ISO ' + exif.ISO : null].filter(Boolean).join('  ');
     if (settings) html += `<div class="exif-row"><span class="exif-label">Settings</span><span class="exif-value">${esc(settings)}</span></div>`;
     if (exif.DateTimeOriginal) html += `<div class="exif-row"><span class="exif-label">Taken</span><span class="exif-value">${esc(exif.DateTimeOriginal)}</span></div>`;
-    if (exif.PixelXDimension && exif.PixelYDimension) html += `<div class="exif-row"><span class="exif-label">EXIF Size</span><span class="exif-value">${exif.PixelXDimension} × ${exif.PixelYDimension}</span></div>`;
+    if (exif.PixelXDimension && exif.PixelYDimension) html += `<div class="exif-row"><span class="exif-label">EXIF Size</span><span class="exif-value">${esc(String(exif.PixelXDimension))} × ${esc(String(exif.PixelYDimension))}</span></div>`;
   } else {
     html += '<div class="exif-heading" style="color:#666">No EXIF data</div>';
   }
@@ -1763,6 +1778,17 @@ function openLightbox(index) {
 function showLightboxImage() {
   const entry = currentImages[lbIndex];
   if (!entry) return;
+
+  // Crossfade: snapshot current image into prev layer
+  const isOpen = $lightbox.classList.contains('open');
+  if (isOpen && $lbImg.src && $lbImg.naturalWidth > 0) {
+    $lbImgPrev.src = $lbImg.src;
+    $lbImgPrev.style.transition = 'none';
+    $lbImgPrev.style.opacity = '1';
+    void $lbImgPrev.offsetHeight; // force reflow so snap is committed
+    $lbImgPrev.style.transition = '';
+  }
+
   lbResetZoom();
   // Revoke previous full-size URL (unless it's in preload cache)
   if (lbCurrentUrl && !lbPreloadCache.has(lbIndex)) {
@@ -1780,6 +1806,8 @@ function showLightboxImage() {
     lbLayoutW = $lbImg.offsetWidth;
     lbLayoutH = $lbImg.offsetHeight;
     $lbImg.className = 'zoom-in-cursor';
+    // Fade out the previous image layer
+    $lbImgPrev.style.opacity = '0';
   };
   $lbImg.src = lbCurrentUrl;
   $lbInfo.textContent = `${entry.name}  (${lbIndex + 1} / ${currentImages.length})`;
@@ -1790,6 +1818,9 @@ function showLightboxImage() {
 function closeLightbox() {
   $lightbox.classList.remove('open');
   lbResetZoom();
+  // Clear crossfade layer
+  $lbImgPrev.src = '';
+  $lbImgPrev.style.opacity = '0';
   // Revoke all preloaded URLs
   for (const [, url] of lbPreloadCache) URL.revokeObjectURL(url);
   lbPreloadCache.clear();
