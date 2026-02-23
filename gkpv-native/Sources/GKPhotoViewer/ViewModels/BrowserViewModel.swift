@@ -9,7 +9,7 @@ final class BrowserViewModel {
     var images: [ImageEntry] = []
     var sortOrder: SortOrder = .nameAsc
     var thumbnailSize: ThumbnailSize = .medium
-    var layoutMode: LayoutMode = .grid
+    var layoutMode: LayoutMode = .justified
     var isLoading = false
     var statusText = ""
     private(set) var generation = 0

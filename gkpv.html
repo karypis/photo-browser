@@ -528,8 +528,8 @@
   <button id="openBtnToolbar" title="Open a different folder">Open</button>
   <div id="breadcrumbs"></div>
   <div class="layout-group">
-    <button data-layout="grid" class="active">Grid</button>
-    <button data-layout="justified">Justified</button>
+    <button data-layout="grid">Grid</button>
+    <button data-layout="justified" class="active">Justified</button>
   </div>
   <div class="size-group">
     <button data-size="sm">S</button>
@@ -585,7 +585,7 @@ let thumbGeneration = 0;  // generation counter to abort stale work
 let currentThumbUrls = []; // blob URLs for current thumbnails (for revocation)
 
 // Layout & virtual scroll state
-let layoutMode = 'grid'; // 'grid' | 'justified'
+let layoutMode = 'justified'; // 'grid' | 'justified'
 let currentSizeKey = 'md';
 let layoutRows = [];
 let totalHeight = 0;
